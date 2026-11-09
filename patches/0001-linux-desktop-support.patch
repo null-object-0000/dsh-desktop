@@ -45,7 +45,7 @@ index 37515c20..706c76fd 100644
    ], APP_ROOT, environment)
  }
 diff --git a/apps/desktop/scripts/electron-builder-config.mjs b/apps/desktop/scripts/electron-builder-config.mjs
-index d5522e3d..b933e340 100644
+index d5522e3d..70ac1fc1 100644
 --- a/apps/desktop/scripts/electron-builder-config.mjs
 +++ b/apps/desktop/scripts/electron-builder-config.mjs
 @@ -66,7 +66,7 @@ export function createElectronBuilderConfig(
@@ -57,7 +57,20 @@ index d5522e3d..b933e340 100644
    if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
    const macOSSigning = packagesMacOS && !unsigned ? resolveMacOSSigningEnvironment(env) : undefined
    if (packagesMacOS && !unsigned && !skipNotarization) resolveMacOSNotarizationEnvironment(env)
-@@ -110,6 +110,8 @@ export function createElectronBuilderConfig(
+@@ -76,6 +76,12 @@ export function createElectronBuilderConfig(
+   let dshDestination
+   let windowsCode = []
+   const unpack = ['**/*.{node,dylib,dll,so,exe}', '**/*.so.*', '**/spawn-helper', '**/@vscode/ripgrep-*/bin/rg',
++    // The Linux image decoder runs sharp in the bundled standalone Node interpreter,
++    // which cannot read ASAR archives: keep the whole sharp package closure on disk.
++    '**/node_modules/sharp/**/*',
++    '**/node_modules/@img/**/*',
++    '**/node_modules/detect-libc/**/*',
++    '**/node_modules/semver/**/*',
+     `**/node_modules/@deepseek-ai/libreoffice-kit-${resolvedPlatform}-${resolvedArch}/**/*`,
+     // LaunchServices opens the Computer Use helper as an application, so every file of its bundles stays on disk.
+     // Both architectures ship: they form one notarized payload whose manifest staging verifies as a whole.
+@@ -110,6 +116,8 @@ export function createElectronBuilderConfig(
      appId,
      protocols: [{ name: 'DeepSeek Harness', schemes: ['dsh'] }],
      extraMetadata: {
@@ -66,7 +79,7 @@ index d5522e3d..b933e340 100644
        dshDesktopAppId: appId,
        dshDesktopUpdateChannel: update?.channel ?? 'nightly',
        ...(policy === undefined ? {} : { dshMandatoryUpdatePolicy: policy }),
-@@ -256,7 +258,15 @@ export function createElectronBuilderConfig(
+@@ -256,7 +264,15 @@ export function createElectronBuilderConfig(
      },
      linux: {
        category: 'Development',
@@ -195,6 +208,24 @@ index 6c3c12c8..840fbef3 100644
  const descriptor = await verifyDesktopRuntime(paths.dsh, readDesktopRuntime(paths.dsh).release.version,
    resolveDesktopPackageTarget(target))
  if (windows && !values.unsigned) await verifyWindowsCode(application)
+diff --git a/apps/desktop/src/main.ts b/apps/desktop/src/main.ts
+index dd314122..01c7c7c8 100644
+--- a/apps/desktop/src/main.ts
++++ b/apps/desktop/src/main.ts
+@@ -525,7 +525,12 @@ async function main(): Promise<void> {
+   const backend = new DesktopBackendController((onFailure) => {
+     const hostInspectPort = developmentHostInspectPort(development)
+     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
+-      hostInspectPort, { ...hostEnvironment, DSH_CLIENT_VERSION: desktopClientVersion() }, onFailure,
++      hostInspectPort, {
++        ...hostEnvironment,
++        DSH_CLIENT_VERSION: desktopClientVersion(),
++        // Linux raster decoding runs in the bundled Node interpreter, not Electron's V8.
++        DSH_DESKTOP_PRIMARY_RUNTIME_NODE: join(primaryRuntime, 'dependencies', 'node', 'bin', 'node'),
++      }, onFailure,
+       primaryRuntime,
+       resources, (next) => { platformView.setSession(next) }, (record) => {
+         operationJournal ??= new OperationJournal(join(app.getPath('userData'), 'plugin-operations'), {
 diff --git a/apps/desktop/tests/fixtures/runtime-payload-smoke.mjs b/apps/desktop/tests/fixtures/runtime-payload-smoke.mjs
 index 3cda38c6..b0d36231 100644
 --- a/apps/desktop/tests/fixtures/runtime-payload-smoke.mjs
@@ -218,6 +249,351 @@ index 3cda38c6..b0d36231 100644
    console.error('runtime payload: html')
    checkHtml()
    console.error('runtime payload: pty')
+diff --git a/packages/attachment/attachment-local/src/sharp.ts b/packages/attachment/attachment-local/src/sharp.ts
+index 798b21ae..d0140dd9 100644
+--- a/packages/attachment/attachment-local/src/sharp.ts
++++ b/packages/attachment/attachment-local/src/sharp.ts
+@@ -1,7 +1,337 @@
+-/** Process-realm lazy access to Sharp's CommonJS-compatible entry. */
++/** Process-realm lazy access to Sharp's CommonJS-compatible entry.
++ *
++ * Linux + Electron: sharp's prebuilt libvips binding segfaults when a raster is
++ * decoded inside Electron's Node runtime. The Host therefore forwards every
++ * raster operation to a standalone Node child process (the bundled primary
++ * runtime interpreter), which loads the same sharp package and returns the
++ * encoded bytes. Every other runtime (plain Node CLI, macOS, Windows) keeps
++ * loading sharp in-process.
++ */
+ 
++import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
++import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
++import { createRequire } from 'node:module'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
+ import type sharp from 'sharp'
+ import { createLazyRequire } from '@deepseek-ai/dsh-lazy-require'
+ 
+-/** Load Sharp on the first raster operation and retain its callable export. */
+-export const requireSharp = createLazyRequire<typeof sharp>('sharp', import.meta.url)
++const requireFromHere = createRequire(import.meta.url)
++
++/** Environment variable naming the standalone Node interpreter of the bundled runtime. */
++const NODE_ENV_NAME = 'DSH_DESKTOP_PRIMARY_RUNTIME_NODE'
++
++/** Sharp instance methods this bridge forwards; anything else is a programming error. */
++type ForwardedMethod = 'rotate' | 'toColourspace' | 'resize' | 'raw' | 'webp' | 'jpeg' | 'png'
++
++interface PipelineOperation {
++  readonly name: ForwardedMethod
++  readonly args: readonly unknown[]
++}
++
++interface PipelineState {
++  readonly input: Uint8Array
++  readonly options: Record<string, unknown>
++  readonly operations: readonly PipelineOperation[]
++}
++
++interface SharpReply {
++  readonly ok: boolean
++  readonly error?: string
++  readonly data?: string
++  readonly metadata?: Record<string, unknown>
++  readonly info?: Record<string, unknown>
++}
++
++/** Standalone-Node child process carrying sharp, kept warm while images are processed. */
++class SharpWorkerBridge {
++  private child: ChildProcessWithoutNullStreams | undefined
++  private workerPath: string | undefined
++  private nextId = 1
++  private readonly pending = new Map<number, {
++    readonly resolve: (reply: SharpReply) => void
++    readonly reject: (error: Error) => void
++    readonly timer: NodeJS.Timeout
++  }>()
++  private idleTimer: NodeJS.Timeout | undefined
++
++  constructor(
++    private readonly nodePath: string,
++    private readonly sharpEntry: string,
++  ) {}
++
++  /** Send one pipeline request, spawning the decoder process on first use. */
++  async request(
++    kind: 'run' | 'metadata',
++    input: Uint8Array,
++    options: Record<string, unknown>,
++    operations: readonly PipelineOperation[],
++    toBuffer: { readonly resolveWithObject?: boolean } | undefined,
++  ): Promise<SharpReply> {
++    const child = this.ensureChild()
++    const id = this.nextId++
++    const reply = new Promise<SharpReply>((resolve, reject) => {
++      const timer = setTimeout(() => {
++        this.pending.delete(id)
++        reject(new Error('image worker: sharp operation timed out'))
++      }, 120_000)
++      timer.unref()
++      this.pending.set(id, { resolve, reject, timer })
++    })
++    try {
++      child.stdin.write(`${JSON.stringify({
++        id,
++        kind,
++        input: Buffer.from(input).toString('base64'),
++        options,
++        operations,
++        toBuffer,
++      })}\n`)
++    } catch (error) {
++      const pending = this.pending.get(id)
++      this.pending.delete(id)
++      if (pending !== undefined) {
++        clearTimeout(pending.timer)
++        pending.reject(error instanceof Error ? error : new Error(String(error)))
++      }
++    }
++    this.scheduleIdle()
++    return reply
++  }
++
++  private ensureChild(): ChildProcessWithoutNullStreams {
++    if (this.child !== undefined) return this.child
++    this.workerPath ??= writeWorkerScript()
++    const child = spawn(this.nodePath, [this.workerPath, this.sharpEntry], {
++      stdio: ['pipe', 'pipe', 'pipe'],
++      env: decoderEnvironment(),
++    })
++    child.stderr.on('data', (chunk: Buffer) => { process.stderr.write(chunk) })
++    child.stderr.on('error', () => {})
++    child.stdin.on('error', () => {})
++    child.stdout.on('error', () => {})
++    let buffered = ''
++    child.stdout.setEncoding('utf8')
++    child.stdout.on('data', (chunk: string) => {
++      buffered += chunk
++      let index = buffered.indexOf('\n')
++      while (index !== -1) {
++        const line = buffered.slice(0, index)
++        buffered = buffered.slice(index + 1)
++        this.settle(line)
++        index = buffered.indexOf('\n')
++      }
++    })
++    child.on('exit', code => {
++      const error = new Error(`image worker: decoder exited with ${String(code)}`)
++      for (const [, pending] of this.pending) {
++        clearTimeout(pending.timer)
++        pending.reject(error)
++      }
++      this.pending.clear()
++      if (this.child === child) this.child = undefined
++    })
++    child.on('error', error => {
++      for (const [, pending] of this.pending) {
++        clearTimeout(pending.timer)
++        pending.reject(error)
++      }
++      this.pending.clear()
++      if (this.child === child) this.child = undefined
++    })
++    child.unref()
++    this.child = child
++    return child
++  }
++
++  private settle(line: string): void {
++    let reply: SharpReply & { readonly id?: number }
++    try {
++      reply = JSON.parse(line) as SharpReply & { readonly id?: number }
++    } catch {
++      return
++    }
++    const id = reply.id
++    if (typeof id !== 'number') return
++    const pending = this.pending.get(id)
++    if (pending === undefined) return
++    clearTimeout(pending.timer)
++    this.pending.delete(id)
++    pending.resolve(reply)
++  }
++
++  private scheduleIdle(): void {
++    if (this.idleTimer !== undefined) clearTimeout(this.idleTimer)
++    const timer = setTimeout(() => {
++      this.child?.kill()
++      this.child = undefined
++    }, 30_000)
++    timer.unref()
++    this.idleTimer = timer
++  }
++}
++
++let bridged: typeof sharp | undefined
++
++/** Write the worker script once per process; it loads sharp from the Host's own resolution. */
++function writeWorkerScript(): string {
++  const directory = mkdtempSync(join(tmpdir(), 'dsh-sharp-worker-'))
++  const path = join(directory, 'sharp-worker.cjs')
++  writeFileSync(path, BRIDGE_WORKER_SOURCE, { mode: 0o600 })
++  return path
++}
++
++/**
++ * Resolve a sharp entry file a plain Node process can read: inside a packaged
++ * application ASAR entries are only readable to Electron, so prefer the
++ * unpacked copy beside the archive when one exists.
++ */
++function resolveSharpEntry(): string {
++  const resolved = requireFromHere.resolve('sharp')
++  const marker = '.asar/'
++  const index = resolved.indexOf(marker)
++  if (index === -1) return resolved
++  const unpacked = `${resolved.slice(0, index)}.asar.unpacked/${resolved.slice(index + marker.length)}`
++  return existsSync(unpacked) ? unpacked : resolved
++}
++
++/** Environment for the decoder child: an interpreter, not Electron's Node mode. */
++function decoderEnvironment(): NodeJS.ProcessEnv {
++  const environment: NodeJS.ProcessEnv = { ...process.env }
++  delete environment.ELECTRON_RUN_AS_NODE
++  delete environment.NODE_OPTIONS
++  return environment
++}
++
++/** Resolve the standalone interpreter that may decode outside Electron's V8. */
++function standaloneNode(): string | undefined {
++  const configured = process.env[NODE_ENV_NAME]
++  if (configured === undefined || configured === '') return undefined
++  return existsSync(configured) ? configured : undefined
++}
++
++/** Whether this process must forward sharp calls to the standalone decoder. */
++function needsStandaloneDecode(): boolean {
++  // Only Electron's Node runtime on Linux crashes; plain Node hosts decode in-process.
++  return process.versions.electron !== undefined && process.platform === 'linux'
++}
++
++/** Build the in-process sharp loader, or a bridging callable under Electron on Linux. */
++function createSharp(): typeof sharp {
++  const inProcess = createLazyRequire<typeof sharp>('sharp', import.meta.url)
++  if (!needsStandaloneDecode()) return inProcess()
++  const nodePath = standaloneNode()
++  if (nodePath !== undefined) {
++    const existing = bridged ?? createBridgedSharp(nodePath)
++    bridged = existing
++    return existing
++  }
++  // Decoding in Electron's own runtime crashes on Linux, so refusing is safer than
++  // letting the Host abort; the Desktop host always exports the interpreter path.
++  throw new Error(
++    `Image decoding on Linux requires the bundled Node interpreter (${NODE_ENV_NAME}); `
++    + 'restart the desktop application with that environment variable set.',
++  )
++}
++
++/** Callable sharp replacement: pipelines execute in the standalone decoder child. */
++function createBridgedSharp(nodePath: string): typeof sharp {
++  const bridge = new SharpWorkerBridge(nodePath, resolveSharpEntry())
++  const callable = (input: Uint8Array, options?: Record<string, unknown>): unknown => new BridgedPipeline(
++    bridge, { input, options: options ?? {}, operations: [] },
++  )
++  return callable as unknown as typeof sharp
++}
++
++/** Recorded pipeline that forwards its operation list to the decoder child. */
++class BridgedPipeline {
++  constructor(
++    private readonly bridge: SharpWorkerBridge,
++    private readonly state: PipelineState,
++  ) {}
++
++  private record(name: ForwardedMethod, ...args: unknown[]): this {
++    return new BridgedPipeline(this.bridge, {
++      input: this.state.input,
++      options: this.state.options,
++      operations: [...this.state.operations, { name, args }],
++    }) as this
++  }
++
++  rotate(...args: unknown[]): this { return this.record('rotate', ...args) }
++  toColourspace(...args: unknown[]): this { return this.record('toColourspace', ...args) }
++  resize(...args: unknown[]): this { return this.record('resize', ...args) }
++  raw(...args: unknown[]): this { return this.record('raw', ...args) }
++  webp(...args: unknown[]): this { return this.record('webp', ...args) }
++  jpeg(...args: unknown[]): this { return this.record('jpeg', ...args) }
++  png(...args: unknown[]): this { return this.record('png', ...args) }
++
++  clone(): BridgedPipeline {
++    return new BridgedPipeline(this.bridge, this.state)
++  }
++
++  async metadata(): Promise<Record<string, unknown>> {
++    const reply = await this.bridge.request('metadata', this.state.input, this.state.options, this.state.operations, undefined)
++    if (!reply.ok || reply.metadata === undefined) throw new Error(reply.error ?? 'image worker: metadata failed')
++    return restoreMetadata(reply.metadata)
++  }
++
++  async toBuffer(options?: { readonly resolveWithObject?: boolean }): Promise<unknown> {
++    const reply = await this.bridge.request('run', this.state.input, this.state.options, this.state.operations, options)
++    if (!reply.ok || reply.data === undefined) throw new Error(reply.error ?? 'image worker: encoding failed')
++    const data = Buffer.from(reply.data, 'base64')
++    return options?.resolveWithObject === true ? { data, info: reply.info ?? {} } : data
++  }
++}
++
++/** Rebuild sharp-shaped metadata from the worker's buffer-free projection. */
++function restoreMetadata(projection: Record<string, unknown>): Record<string, unknown> {
++  const present = (value: unknown): Buffer | undefined => value === true ? Buffer.alloc(0) : undefined
++  return {
++    ...projection,
++    exif: present(projection.hasExif),
++    xmp: present(projection.hasXmp),
++    iptc: present(projection.hasIptc),
++    icc: present(projection.hasIcc),
++    tifftagPhotoshop: present(projection.hasTifftagPhotoshop),
++    comments: present(projection.hasComments),
++  }
++}
++
++/** Worker program: one JSON line in, one JSON line out; the only place sharp decodes. */
++const BRIDGE_WORKER_SOURCE = [
++  "'use strict'",
++  "const sharp = require(process.argv[2])",
++  "const readline = require('node:readline')",
++  "const send = payload => process.stdout.write(JSON.stringify(payload) + '\\n')",
++  "const OPS = new Set(['rotate', 'toColourspace', 'resize', 'raw', 'webp', 'jpeg', 'png'])",
++  "const reduced = metadata => ({ format: metadata.format, width: metadata.width, height: metadata.height,",
++  "  pages: metadata.pages, orientation: metadata.orientation, depth: metadata.depth, space: metadata.space,",
++  "  hasAlpha: metadata.hasAlpha, hasExif: metadata.exif !== undefined, hasXmp: metadata.xmp !== undefined,",
++  "  hasIptc: metadata.iptc !== undefined, hasIcc: metadata.icc !== undefined, hasProfile: metadata.hasProfile === true,",
++  "  hasTifftagPhotoshop: metadata.tifftagPhotoshop !== undefined, hasComments: metadata.comments !== undefined })",
++  "async function run(message) {",
++  "  let image = sharp(Buffer.from(message.input, 'base64'), message.options || {})",
++  "  for (const operation of message.operations || []) {",
++  "    if (!OPS.has(operation.name)) throw new Error('image worker: unsupported sharp operation ' + operation.name)",
++  "    image = image[operation.name](...operation.args)",
++  "  }",
++  "  if (message.kind === 'metadata') return { metadata: reduced(await image.metadata()) }",
++  "  if (message.toBuffer && message.toBuffer.resolveWithObject === true) {",
++  "    const encoded = await image.toBuffer({ resolveWithObject: true })",
++  "    return { data: encoded.data.toString('base64'), info: encoded.info }",
++  "  }",
++  "  return { data: (await image.toBuffer()).toString('base64') }",
++  "}",
++  "readline.createInterface({ input: process.stdin, terminal: false }).on('line', line => {",
++  "  let message",
++  "  try { message = JSON.parse(line) } catch { return }",
++  "  run(message).then(result => send({ id: message.id, ok: true, ...result }),",
++  "    error => send({ id: message.id, ok: false, error: error && error.message ? error.message : String(error) }))",
++  "})",
++].join('\n')
++
++/** Load Sharp: bridged to a standalone decoder on Electron, in-process elsewhere. */
++export function requireSharp(): typeof sharp {
++  return createSharp()
++}
 diff --git a/pnpm-workspace.yaml b/pnpm-workspace.yaml
 index 59b31eb4..54406818 100644
 --- a/pnpm-workspace.yaml

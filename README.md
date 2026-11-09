@@ -26,9 +26,11 @@ sudo apt -f install
 
 每个 Release 对应一个官方 tag（例如 `dsh-v0.2.2-rc.1`）。当前只有官方预发布（rc）版本，正式版发布后本仓库会跟随。版本索引见 [`dist/index.json`](dist/index.json)。
 
-## 已知限制
+## 图片解码（Linux 修复）
 
-- **图片解码不可用**：`sharp` 的预编译 libvips 在 Electron 的 Node 运行时下解码会 SIGSEGV（Electron 44.7/44.9/45、sharp 0.34/0.35 均复现；随包独立 Node 24.21 正常）。应用内粘贴/上传图片可能导致 Host 崩溃，图片相关场景暂不推荐。
+`sharp` 的预编译 libvips 在 Electron 的 Node 运行时下解码会 SIGSEGV（Electron 44.7/44.9/45、sharp 0.34/0.35 均复现；随包独立 Node 24.21 正常）。本仓库补丁把光栅操作转发给 primary-runtime 里的独立 Node 子进程执行，并把 `sharp`、`@img/*`、`detect-libc`、`semver` 从 ASAR 解包供纯 Node 读取。
+
+已验证（真实安装包启动）：粘贴 900×700 PNG、文件选择器上传 900×700 PNG 均成功保存且 Host 无崩溃；ASAR 布局下 `saveImage` / `readImageRequest` 解码+归一化+JPEG 编码均通过。
 - 无系统托盘、无应用内自动更新（更新由包管理器或重新下载完成）。
 - 未做 deb/GPG 签名。
 - deb 版本号按 Debian 规则把 `-rc.1` 规范成 `0.2.2~rc.1`。

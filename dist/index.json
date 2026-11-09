@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-09T15:39:02.746Z",
+  "generatedAt": "2026-11-09T16:35:58.214Z",
   "upstreamRepo": "https://github.com/deepseek-ai/deepseek-harness",
   "channels": {
     "stable": null,
@@ -16,18 +16,19 @@
         {
           "kind": "deb",
           "file": "deepseek-harness-0.2.2-rc.1-linux-amd64-unsigned.deb",
-          "size": 293571684,
-          "sha256": "835e23240f2eeb65b3225831a51e6e031ce403fe7e74257d17817ae8e41e9828"
+          "size": 293537420,
+          "sha256": "ffb9281cca21f118bf8d1f9ea5eb9795adb98a82d81135d35021c56ea9f9897f"
         },
         {
           "kind": "AppImage",
           "file": "deepseek-harness-0.2.2-rc.1-linux-x86_64-unsigned.AppImage",
-          "size": 371645052,
-          "sha256": "2cae515a74727f39ff1f933e0060731a2688428eec8667e4b3839e1f219fdbf6"
+          "size": 371644367,
+          "sha256": "3534cbb39623a35894ade78eec631343a3d63534c2bd7b9a893515eb493e46ad"
         }
       ],
+      "imageDecode": "standalone-node-child-process",
       "upstreamCommit": "fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159",
-      "builtAt": "2026-11-09T15:38:40.988Z"
+      "builtAt": "2026-11-09T16:35:58.174Z"
     }
   },
   "versions": [
@@ -44,18 +45,19 @@
         {
           "kind": "deb",
           "file": "deepseek-harness-0.2.2-rc.1-linux-amd64-unsigned.deb",
-          "size": 293571684,
-          "sha256": "835e23240f2eeb65b3225831a51e6e031ce403fe7e74257d17817ae8e41e9828"
+          "size": 293537420,
+          "sha256": "ffb9281cca21f118bf8d1f9ea5eb9795adb98a82d81135d35021c56ea9f9897f"
         },
         {
           "kind": "AppImage",
           "file": "deepseek-harness-0.2.2-rc.1-linux-x86_64-unsigned.AppImage",
-          "size": 371645052,
-          "sha256": "2cae515a74727f39ff1f933e0060731a2688428eec8667e4b3839e1f219fdbf6"
+          "size": 371644367,
+          "sha256": "3534cbb39623a35894ade78eec631343a3d63534c2bd7b9a893515eb493e46ad"
         }
       ],
+      "imageDecode": "standalone-node-child-process",
       "upstreamCommit": "fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159",
-      "builtAt": "2026-11-09T15:38:40.988Z"
+      "builtAt": "2026-11-09T16:35:58.174Z"
     }
   ]
 }
