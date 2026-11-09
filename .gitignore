@@ -1,0 +1,6 @@
+# Build inputs/output copies live outside the repository
+/src/
+/dist/**/*.deb
+/dist/**/*.AppImage
+/dist/**/build.log
+/tmp/

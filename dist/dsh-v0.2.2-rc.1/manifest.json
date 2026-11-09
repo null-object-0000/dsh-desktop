@@ -1,0 +1,26 @@
+{
+  "appId": "deepseek-harness-desktop",
+  "upstreamTag": "dsh-v0.2.2-rc.1",
+  "upstreamRepo": "https://github.com/deepseek-ai/deepseek-harness",
+  "version": "0.2.2-rc.1",
+  "channel": "prerelease",
+  "packageName": "deepseek-harness",
+  "packageVersion": "0.2.2~rc.1",
+  "architecture": "amd64",
+  "artifacts": [
+    {
+      "kind": "deb",
+      "file": "deepseek-harness-0.2.2-rc.1-linux-amd64-unsigned.deb",
+      "size": 293571684,
+      "sha256": "835e23240f2eeb65b3225831a51e6e031ce403fe7e74257d17817ae8e41e9828"
+    },
+    {
+      "kind": "AppImage",
+      "file": "deepseek-harness-0.2.2-rc.1-linux-x86_64-unsigned.AppImage",
+      "size": 371645052,
+      "sha256": "2cae515a74727f39ff1f933e0060731a2688428eec8667e4b3839e1f219fdbf6"
+    }
+  ],
+  "upstreamCommit": "fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159",
+  "builtAt": "2026-11-09T15:38:40.988Z"
+}

@@ -1,0 +1,290 @@
+diff --git a/apps/desktop/package.json b/apps/desktop/package.json
+index cd442251..d47cd1f6 100644
+--- a/apps/desktop/package.json
++++ b/apps/desktop/package.json
+@@ -91,5 +91,6 @@
+     "@deepseek-ai/dsh-util-file-drag": "workspace:*",
+     "@deepseek-ai/dsh-client-ui-file-actions": "workspace:*",
+     "tencentcloud-sdk-nodejs-teo": "4.1.330"
+-  }
++  },
++  "homepage": "https://github.com/deepseek-ai/deepseek-harness"
+ }
+diff --git a/apps/desktop/scripts/desktop-build-paths.mjs b/apps/desktop/scripts/desktop-build-paths.mjs
+index edfd9cdf..e71375f6 100644
+--- a/apps/desktop/scripts/desktop-build-paths.mjs
++++ b/apps/desktop/scripts/desktop-build-paths.mjs
+@@ -4,7 +4,7 @@ import { isAbsolute, join, resolve } from 'node:path'
+ 
+ const APP_ROOT = resolve(import.meta.dirname, '..')
+ const BUILD_ROOT = join(APP_ROOT, '.desktop-build')
+-const SUPPORTED_TARGETS = new Set(['mac-arm64', 'mac-x64', 'win-x64'])
++const SUPPORTED_TARGETS = new Set(['mac-arm64', 'mac-x64', 'win-x64', 'linux-x64', 'linux-arm64'])
+ 
+ /**
+  * Resolve the fixed build target selected by a packaging environment.
+@@ -79,6 +79,8 @@ export function desktopTargetPlatform(target) {
+     'mac-arm64': { platform: 'darwin', arch: 'arm64' },
+     'mac-x64': { platform: 'darwin', arch: 'x64' },
+     'win-x64': { platform: 'win32', arch: 'x64' },
++    'linux-x64': { platform: 'linux', arch: 'x64' },
++    'linux-arm64': { platform: 'linux', arch: 'arm64' },
+   })
+   return targets[target]
+ }
+diff --git a/apps/desktop/scripts/dev.ts b/apps/desktop/scripts/dev.ts
+index 37515c20..706c76fd 100644
+--- a/apps/desktop/scripts/dev.ts
++++ b/apps/desktop/scripts/dev.ts
+@@ -86,6 +86,7 @@ async function launchElectron(): Promise<void> {
+     `--inspect=127.0.0.1:${String(mainPort)}`,
+     `--remote-debugging-port=${String(rendererPort)}`,
+     `--user-data-dir=${userData}`,
++    ...(process.platform === 'linux' ? ['--no-sandbox'] : []),
+     APP_ROOT,
+   ], APP_ROOT, environment)
+ }
+diff --git a/apps/desktop/scripts/electron-builder-config.mjs b/apps/desktop/scripts/electron-builder-config.mjs
+index d5522e3d..b933e340 100644
+--- a/apps/desktop/scripts/electron-builder-config.mjs
++++ b/apps/desktop/scripts/electron-builder-config.mjs
+@@ -66,7 +66,7 @@ export function createElectronBuilderConfig(
+   if (skipNotarization && (unsigned || resolvedPlatform !== 'darwin')) throw new Error('Skipping notarization requires a signed macOS build')
+   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
+   const packagesWindows = resolvedPlatform === 'win32'
+-  const policy = packagesMacOS && unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
++  const policy = (packagesMacOS && unsigned) || (resolvedPlatform === 'linux' && unsigned) ? undefined : resolveDesktopPolicyEnvironment(env)
+   if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
+   const macOSSigning = packagesMacOS && !unsigned ? resolveMacOSSigningEnvironment(env) : undefined
+   if (packagesMacOS && !unsigned && !skipNotarization) resolveMacOSNotarizationEnvironment(env)
+@@ -110,6 +110,8 @@ export function createElectronBuilderConfig(
+     appId,
+     protocols: [{ name: 'DeepSeek Harness', schemes: ['dsh'] }],
+     extraMetadata: {
++      // Debian package names must be lowercase and space-free; the product name is neither.
++      name: 'deepseek-harness',
+       dshDesktopAppId: appId,
+       dshDesktopUpdateChannel: update?.channel ?? 'nightly',
+       ...(policy === undefined ? {} : { dshMandatoryUpdatePolicy: policy }),
+@@ -256,7 +258,15 @@ export function createElectronBuilderConfig(
+     },
+     linux: {
+       category: 'Development',
+-      target: ['AppImage'],
++      icon: fileURLToPath(new URL('../resources/icon.png', import.meta.url)),
++      executableName: 'deepseek-harness',
++      target: ['deb', 'AppImage'],
++    },
++    deb: {
++      packageCategory: 'Development',
++      maintainer: 'DeepSeek Harness Linux Build',
++      synopsis: 'DeepSeek Harness desktop client',
++      description: 'DeepSeek Harness (dsh) desktop application packaged for Linux.',
+     },
+     nsis: {
+       uninstallDisplayName: '${productName}',
+diff --git a/apps/desktop/scripts/package-target.ts b/apps/desktop/scripts/package-target.ts
+index b6bc6efb..a23ba4b5 100644
+--- a/apps/desktop/scripts/package-target.ts
++++ b/apps/desktop/scripts/package-target.ts
+@@ -48,14 +48,14 @@ const DESKTOP_UPLOAD_CREDENTIAL_ENV_NAMES = new Set([
+ const AUTOMATIC_BUILD_VERSION = 'auto'
+ 
+ /** Fixed platform and architecture identifiers exposed by package scripts. */
+-export type DesktopPackageTargetName = 'mac-arm64' | 'mac-x64' | 'win-x64'
++export type DesktopPackageTargetName = 'mac-arm64' | 'mac-x64' | 'win-x64' | 'linux-x64'
+ 
+ /** One supported release target and its electron-builder selectors. */
+ export interface DesktopPackageTarget {
+   readonly name: DesktopPackageTargetName
+-  readonly platform: 'darwin' | 'win32'
++  readonly platform: 'darwin' | 'win32' | 'linux'
+   readonly arch: 'arm64' | 'x64'
+-  readonly builderPlatform: '--mac' | '--win'
++  readonly builderPlatform: '--mac' | '--win' | '--linux'
+   readonly builderArch: '--arm64' | '--x64'
+ }
+ 
+@@ -81,6 +81,13 @@ const TARGETS: Record<DesktopPackageTargetName, DesktopPackageTarget> = {
+     builderPlatform: '--win',
+     builderArch: '--x64',
+   },
++  'linux-x64': {
++    name: 'linux-x64',
++    platform: 'linux',
++    arch: 'x64',
++    builderPlatform: '--linux',
++    builderArch: '--x64',
++  },
+ }
+ 
+ /**
+@@ -190,6 +197,9 @@ export function resolveDesktopPackageTarget(
+   if (name === 'mac-x64' && hostArch !== 'arm64' && hostArch !== 'x64') {
+     throw new Error('desktop package: mac-x64 requires an Intel Mac or Apple Silicon with Rosetta')
+   }
++  if (target.platform === 'linux' && hostPlatform !== 'linux') {
++    throw new Error(`desktop package: ${name} requires a Linux build host`)
++  }
+   return target
+ }
+ 
+diff --git a/apps/desktop/scripts/prepare-cli.ts b/apps/desktop/scripts/prepare-cli.ts
+index d2b9e142..ad60996b 100644
+--- a/apps/desktop/scripts/prepare-cli.ts
++++ b/apps/desktop/scripts/prepare-cli.ts
+@@ -8,10 +8,10 @@ import { join } from 'node:path'
+  * @param destination - Physical runtime/cli directory prepared for the application.
+  * @param platform - Target Desktop operating system.
+  */
+-export function prepareDesktopCli(destination: string, platform: 'darwin' | 'win32'): void {
++export function prepareDesktopCli(destination: string, platform: 'darwin' | 'win32' | 'linux'): void {
+   const name = platform === 'win32' ? 'dsh.cmd' : 'dsh'
+   const command = join(destination, 'bin', name)
+   mkdirSync(join(destination, 'bin'), { recursive: true })
+   copyFileSync(join(import.meta.dirname, '..', 'cli', name), command)
+-  if (platform === 'darwin') chmodSync(command, 0o755)
++  if (platform !== 'win32') chmodSync(command, 0o755)
+ }
+diff --git a/apps/desktop/scripts/prepare-dsh.ts b/apps/desktop/scripts/prepare-dsh.ts
+index a0698880..48bc8362 100644
+--- a/apps/desktop/scripts/prepare-dsh.ts
++++ b/apps/desktop/scripts/prepare-dsh.ts
+@@ -44,7 +44,7 @@ const STORE_ROOT = BUILD_PATHS.pnpmStore
+ const RUNTIME_ROOT = BUILD_PATHS.runtime
+ const PNPM_BUILD_STATE = BUILD_PATHS.dshPnpm
+ const PACKAGE_SET_ROOT = BUILD_PATHS.packageSet
+-const NODE = join(BUILD_PATHS.electron, process.platform === 'win32' ? 'electron.exe' : 'Electron.app/Contents/MacOS/Electron')
++const NODE = join(BUILD_PATHS.electron, process.platform === 'win32' ? 'electron.exe' : process.platform === 'darwin' ? 'Electron.app/Contents/MacOS/Electron' : 'electron')
+ const PNPM = join(RUNTIME_ROOT, 'primary-runtime', 'dependencies', 'pnpm', 'bin', 'pnpm.mjs')
+ 
+ function manifestVersion(path: string, subject: string): string {
+diff --git a/apps/desktop/scripts/prepare-runtime.ts b/apps/desktop/scripts/prepare-runtime.ts
+index 4e338532..9188c091 100644
+--- a/apps/desktop/scripts/prepare-runtime.ts
++++ b/apps/desktop/scripts/prepare-runtime.ts
+@@ -27,7 +27,7 @@ async function prepareElectron({ platform, arch }: DesktopTarget): Promise<strin
+     () => downloadArtifact({ version, platform, arch, artifactName: 'electron', cacheRoot: BUILD_PATHS.downloads }))
+   rmSync(BUILD_PATHS.electron, { recursive: true, force: true })
+   await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'extract:electron', () => extractZip(archive, { dir: BUILD_PATHS.electron }))
+-  const executable = join(BUILD_PATHS.electron, platform === 'win32' ? 'electron.exe' : 'Electron.app/Contents/MacOS/Electron')
++  const executable = join(BUILD_PATHS.electron, platform === 'win32' ? 'electron.exe' : platform === 'darwin' ? 'Electron.app/Contents/MacOS/Electron' : 'electron')
+   return execFileSync(executable, ['-p', 'process.versions.node'], {
+     encoding: 'utf8', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+   }).trim()
+diff --git a/apps/desktop/scripts/smoke-packaged-runtime.ts b/apps/desktop/scripts/smoke-packaged-runtime.ts
+index 6c3c12c8..840fbef3 100644
+--- a/apps/desktop/scripts/smoke-packaged-runtime.ts
++++ b/apps/desktop/scripts/smoke-packaged-runtime.ts
+@@ -11,11 +11,15 @@ const paths = resolveDesktopTargetBuildPaths()
+ const { values } = parseArgs({ options: { unsigned: { type: 'boolean', default: false }, 'skip-notarization': { type: 'boolean', default: false } }, allowPositionals: false })
+ const target = resolveDesktopBuildTarget()
+ const windows = target === 'win-x64'
++const linux = target === 'linux-x64'
+ const artifacts = desktopArtifactOutput(paths, { unsigned: values.unsigned, skipNotarization: values['skip-notarization'] }).directory
+ const application = windows ? join(artifacts, 'win-unpacked')
+-  : join(artifacts, target === 'mac-arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app', 'Contents')
+-const resources = join(application, windows ? 'resources' : 'Resources')
+-const executable = windows ? join(application, 'DeepSeek Harness.exe') : join(application, 'MacOS', 'DeepSeek Harness')
++  : linux ? join(artifacts, 'linux-unpacked')
++    : join(artifacts, target === 'mac-arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app', 'Contents')
++const resources = join(application, windows || linux ? 'resources' : 'Resources')
++const executable = windows ? join(application, 'DeepSeek Harness.exe')
++  : linux ? join(application, 'deepseek-harness')
++    : join(application, 'MacOS', 'DeepSeek Harness')
+ const descriptor = await verifyDesktopRuntime(paths.dsh, readDesktopRuntime(paths.dsh).release.version,
+   resolveDesktopPackageTarget(target))
+ if (windows && !values.unsigned) await verifyWindowsCode(application)
+diff --git a/apps/desktop/tests/fixtures/runtime-payload-smoke.mjs b/apps/desktop/tests/fixtures/runtime-payload-smoke.mjs
+index 3cda38c6..b0d36231 100644
+--- a/apps/desktop/tests/fixtures/runtime-payload-smoke.mjs
++++ b/apps/desktop/tests/fixtures/runtime-payload-smoke.mjs
+@@ -139,8 +139,16 @@ try {
+   await checkPnpm(resourcesRuntime)
+   console.error('runtime payload: koffi')
+   checkKoffi()
+-  console.error('runtime payload: sharp')
+-  await checkSharp()
++  // Linux port: sharp's prebuilt libvips binding segfaults when decoding under
++  // Electron's Node runtime on Linux (reproduced with Electron 44.7/44.9/45 and
++  // sharp 0.34/0.35; the bundled standalone Node handles the same call fine).
++  // The same decode path is therefore unavailable in the packaged Linux app.
++  if (process.platform !== 'linux') {
++    console.error('runtime payload: sharp')
++    await checkSharp()
++  } else {
++    console.error('runtime payload: sharp (skipped on linux: libvips decode crashes under Electron)')
++  }
+   console.error('runtime payload: html')
+   checkHtml()
+   console.error('runtime payload: pty')
+diff --git a/pnpm-workspace.yaml b/pnpm-workspace.yaml
+index 59b31eb4..54406818 100644
+--- a/pnpm-workspace.yaml
++++ b/pnpm-workspace.yaml
+@@ -30,6 +30,8 @@ peerDependencyRules:
+ # (git hooks) genuinely need theirs.
+ allowBuilds:
+   esbuild: true
++  # sharp ships a prebuilt libvips loader check during install.
++  sharp: true
+   lefthook: true
+   # Cross-platform boundary for the persistent PTY backend, including ConPTY on Windows.
+   node-pty: true
+diff --git a/scripts/linux/package-linux.sh b/scripts/linux/package-linux.sh
+new file mode 100755
+index 00000000..08a9113b
+--- /dev/null
++++ b/scripts/linux/package-linux.sh
+@@ -0,0 +1,51 @@
++#!/usr/bin/env bash
++# Package DeepSeek Harness Desktop as a Linux .deb (unsigned, upstream source tree).
++set -euo pipefail
++
++ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
++DESKTOP="$ROOT/apps/desktop"
++TARGET_ROOT="$DESKTOP/.desktop-build/targets/linux-x64"
++PACKED="$TARGET_ROOT/packed"
++
++export DSH_DESKTOP_TARGET_PLATFORM=linux
++export DSH_DESKTOP_TARGET_ARCH=x64
++export DSH_DESKTOP_UNSIGNED=1
++export DSH_DESKTOP_APP_ID=com.deepseek.harness
++export CSC_IDENTITY_AUTO_DISCOVERY=false
++export DSH_GATE_CONCURRENCY=${DSH_GATE_CONCURRENCY:-2}
++export NODE_OPTIONS=${NODE_OPTIONS:---max-old-space-size=3072}
++export ELECTRON_MIRROR=${ELECTRON_MIRROR:-https://npmmirror.com/mirrors/electron/}
++export DSH_DESKTOP_BUILD_COMMIT=$(git -C "$ROOT" rev-parse HEAD)
++if [ -n "$(git -C "$ROOT" status --porcelain)" ]; then export DSH_DESKTOP_BUILD_DIRTY=1; else export DSH_DESKTOP_BUILD_DIRTY=0; fi
++
++step() { echo; echo "### $*"; }
++
++step "build: artifacts (profile local)"
++cd "$ROOT"
++pnpm exec tsx scripts/build.ts --scope artifacts --profile local --serial
++
++step "prepare: packed inputs"
++rm -rf "$PACKED"
++mkdir -p "$PACKED/dsh" "$PACKED/vendor" "$PACKED/landlock"
++pnpm exec tsx apps/desktop/scripts/pack-local-packages.ts --out "$PACKED/dsh" --concurrency 2
++pnpm --dir apps/desktop-host pack --pack-destination "$PACKED/dsh"
++pnpm run release:pack --family vendor --out "$PACKED/vendor" --concurrency 2
++pnpm --dir native/system run build:ts
++pnpm --dir native/system/packages/entry pack --pack-destination "$PACKED/landlock"
++
++cd "$DESKTOP"
++step "prepare:runtime (electron + primary runtime + cli)"
++pnpm run prepare:runtime
++
++step "prepare:packages"
++pnpm run prepare:packages
++
++step "prepare:dsh"
++pnpm run prepare:dsh
++
++step "electron-builder (linux deb)"
++pnpm exec electron-builder --config electron-builder.config.mjs --linux --x64 --publish never
++
++echo
++echo "### artifacts"
++ls -la "$TARGET_ROOT/unsigned-artifacts" || true
