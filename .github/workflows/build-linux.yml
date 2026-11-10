@@ -106,16 +106,17 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}
           # Rebuilding an already-published tag must still sort higher than the
-          # installed build, so the store offers it as an update. The deb control
-          # version gains `+linux.<run>`; release asset names stay canonical.
+          # installed build, so the store offers it as an update: the deb control
+          # version gains a `.linux.<run>` prerelease field (Debian turns it into
+          # `~rc.1.linux.<run>`, which sorts above `~rc.1`). Asset names stay canonical.
           BUILD_REVISION: ${{ steps.existing.outputs.asset_count }}
         run: |
           chmod +x scripts/*.sh
           if [ "${BUILD_REVISION:-0}" -gt 0 ]; then
             TAG="${{ steps.resolve.outputs.tag }}"
             VERSION="${TAG#dsh-v}"
-            export DSH_DESKTOP_BUILD_VERSION="${VERSION}+linux.${GITHUB_RUN_NUMBER}"
-            echo "rebuild of an existing release: deb version ${VERSION}+linux.${GITHUB_RUN_NUMBER}"
+            export DSH_DESKTOP_BUILD_VERSION="${VERSION}.linux.${GITHUB_RUN_NUMBER}"
+            echo "rebuild of an existing release: deb version ${VERSION}.linux.${GITHUB_RUN_NUMBER}"
           fi
           ./scripts/build-tag.sh "${{ steps.resolve.outputs.tag }}"
 
