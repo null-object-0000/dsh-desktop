@@ -45,8 +45,8 @@ sudo apt -f install
 
 最新 Release 由 CI 构建并验证（图片解码回归测试通过）：
 
-- `deepseek-harness-0.2.2-rc.1-linux-amd64-unsigned.deb` — sha256 `fc38da2ff05b8223ed9581ca36ce18b9b32f2f8a91b197893c9e155fffe4f21d`（deb 版本 `0.2.2~rc.1.linux.6`）
-- `deepseek-harness-0.2.2-rc.1-linux-x86_64-unsigned.AppImage` — sha256 `aaa0c7fafd07b1a03d5dda6a139a7374bf2c58712bf40f1834725874ee08a063`
+- `deepseek-harness-0.2.2-rc.1-linux-amd64-unsigned.deb` — sha256 `533947b56b73c4253e7c5acde9c7087028333face71a40e2ce2a97b517939adc`（deb 版本 `0.2.2~rc.1.linux.8`）
+- `deepseek-harness-0.2.2-rc.1-linux-x86_64-unsigned.AppImage` — sha256 `130b297ee31bbed170e174a4a8493805da9cbeaaf135bd6662eb68f473415aba`
 - 上游 commit：`66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db`（tag `dsh-v0.2.2-rc.1`）
 
 ## 自动构建（GitHub Actions）
