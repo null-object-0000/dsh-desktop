@@ -120,6 +120,17 @@ jobs:
           fi
           ./scripts/build-tag.sh "${{ steps.resolve.outputs.tag }}"
 
+      # The port edits desktop sources and the upstream target table, so run the
+      # affected upstream suites before publishing; they catch drift when a new
+      # upstream tag moves code the patch touches.
+      - name: Run affected desktop tests
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          chmod +x scripts/*.sh
+          ./scripts/verify-tests.sh
+
       - name: Verify image decoding regression
         if: steps.existing.outputs.skip != 'true'
         env:

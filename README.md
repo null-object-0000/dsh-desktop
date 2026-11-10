@@ -32,6 +32,8 @@ sudo apt -f install
 
 已验证（真实安装包启动）：粘贴 900×700 PNG、文件选择器上传 900×700 PNG 均成功保存且 Host 无崩溃；ASAR 布局下 `saveImage` / `readImageRequest` 解码+归一化+JPEG 编码均通过。
 
+测试门禁：CI 在发布前跑补丁会影响到的上游套件（`scripts/verify-tests.sh`：main-startup、tray、desktop-build-paths、package-target），上游新 tag 挪动相关代码时会立刻失败。
+
 品牌：用 `--profile official` 构建客户端，侧栏显示官方鲸鱼标识与 DeepSeek Harness 字样（此前 unsigned 走 `local` 档，显示 “DSH 本地构建” 占位）。
 
 图标：构建时把 1104px 的主图标渲染成 16–1024 的标准 hicolor 尺寸再打包，桌面启动器与商店图标都能解析（此前只有 `1104x1104` 目录，图标主题不会扫描，安装后显示占位图标）。
