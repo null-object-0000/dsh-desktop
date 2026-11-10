@@ -35,6 +35,14 @@ sudo apt -f install
 - 未做 deb/GPG 签名。
 - deb 版本号按 Debian 规则把 `-rc.1` 规范成 `0.2.2~rc.1`。
 
+## 当前版本
+
+最新 Release 由 CI 构建并验证（图片解码回归测试通过）：
+
+- `deepseek-harness-0.2.2-rc.1-linux-amd64-unsigned.deb` — sha256 `bf80b51d7804ba141d4e7e33f7077e0e3a6050be68c7345cdc185f79d7086b7f`
+- `deepseek-harness-0.2.2-rc.1-linux-x86_64-unsigned.AppImage` — sha256 `81182bd0dbe7142dc373a1cb30ab1d1e1237bc349f5549607a3b429ef21c6322`
+- 上游 commit：`66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db`（tag `dsh-v0.2.2-rc.1`）
+
 ## 自动构建（GitHub Actions）
 
 `build-linux.yml` 工作流每 6 小时检查一次上游 `dsh-v*` tag：有新版本时在 GitHub 托管 runner 上克隆该 tag、应用补丁、构建并验证图片解码，然后把 `.deb` / `.AppImage` / `manifest.json` 发布到本仓库 Releases（UManager 的 feed CI 每 30 分钟轮询 `/releases/latest`，商店自动可见）。也可以手动触发：
