@@ -45,7 +45,7 @@ index 37515c20..706c76fd 100644
    ], APP_ROOT, environment)
  }
 diff --git a/apps/desktop/scripts/electron-builder-config.mjs b/apps/desktop/scripts/electron-builder-config.mjs
-index cf0c19e8..301bbc69 100644
+index cf0c19e8..613b73c4 100644
 --- a/apps/desktop/scripts/electron-builder-config.mjs
 +++ b/apps/desktop/scripts/electron-builder-config.mjs
 @@ -1,7 +1,7 @@
@@ -88,7 +88,16 @@ index cf0c19e8..301bbc69 100644
        dshDesktopAppId: appId,
        dshDesktopUpdateChannel: update?.channel ?? 'nightly',
        ...(policy === undefined ? {} : { dshMandatoryUpdatePolicy: policy }),
-@@ -254,7 +262,19 @@ export function createElectronBuilderConfig(
+@@ -160,6 +168,8 @@ export function createElectronBuilderConfig(
+       { from: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)), to: 'icon.png' },
+       // Windows tray bitmaps; macOS keeps the Dock and ships no menu bar icon.
+       ...(packagesWindows ? [{ from: fileURLToPath(new URL('../resources/tray-windows.ico', import.meta.url)), to: 'tray.ico' }] : []),
++      // Linux StatusNotifier tray bitmap rendered by scripts/linux/render-linux-icons.mjs.
++      ...(resolvedPlatform === 'linux' ? [{ from: fileURLToPath(new URL('../resources/tray-linux.png', import.meta.url)), to: 'tray-linux.png' }] : []),
+     ],
+     mac: {
+       icon: fileURLToPath(new URL('../resources/icon-macos.png', import.meta.url)),
+@@ -254,7 +264,19 @@ export function createElectronBuilderConfig(
      },
      linux: {
        category: 'Development',
@@ -241,7 +250,7 @@ index 6c3c12c8..840fbef3 100644
    resolveDesktopPackageTarget(target))
  if (windows && !values.unsigned) await verifyWindowsCode(application)
 diff --git a/apps/desktop/src/main.ts b/apps/desktop/src/main.ts
-index d8d0e30c..d57dcbbf 100644
+index d8d0e30c..6ee71178 100644
 --- a/apps/desktop/src/main.ts
 +++ b/apps/desktop/src/main.ts
 @@ -518,7 +518,12 @@ async function main(): Promise<void> {
@@ -258,6 +267,83 @@ index d8d0e30c..d57dcbbf 100644
        primaryRuntime,
        resources, (next) => { platformView.setSession(next) }, (record) => {
          operationJournal ??= new OperationJournal(join(app.getPath('userData'), 'plugin-operations'), {
+@@ -1089,18 +1094,25 @@ async function main(): Promise<void> {
+     tray?.relabel()
+   }
+   refreshApplicationMenu()
+-  const trayIconPath = development ? join(app.getAppPath(), 'resources', 'tray-windows.ico') : join(process.resourcesPath, 'tray.ico')
+-  if (process.platform === 'win32') {
++  // Linux draws the same StatusNotifier tray through an AppIndicator host; the
++  // bitmap comes from scripts/linux/render-linux-icons.mjs instead of the ICO.
++  const traySupported = process.platform === 'win32' || process.platform === 'linux'
++  const trayIconPath = development
++    ? join(app.getAppPath(), 'resources', process.platform === 'linux' ? 'tray-linux.png' : 'tray-windows.ico')
++    : join(process.resourcesPath, process.platform === 'linux' ? 'tray-linux.png' : 'tray.ico')
++  if (traySupported) {
+     // The tray is the way back to a hidden window; without it, relaunching the application still focuses it.
+     try {
+       tray = new DesktopTray({ iconPath: trayIconPath, locale: currentDesktopLocale,
+         open: () => { focusPrimaryWindow() }, quit: () => { app.quit() } })
+     } catch (error) { console.warn('desktop tray: unavailable', error) }
+   }
+-  const backgroundNotice = process.platform === 'win32'
+-    ? new DesktopBackgroundNotice({ markerPath: join(app.getPath('userData'), 'background-close-confirmed'),
++  // Hiding on close without a tray would strand the running application, so the
++  // notice (and therefore hide-on-close) only exists where the tray came up.
++  const backgroundNotice = tray === undefined
++    ? undefined
++    : new DesktopBackgroundNotice({ markerPath: join(app.getPath('userData'), 'background-close-confirmed'),
+       locale: () => locale, show: ordinaryMessageBox, focus: () => { updateDialog.focus() } })
+-    : undefined
+   const quitConfirmation = new DesktopQuitConfirmation({
+     locale: () => locale,
+     inspect: () => backend.host?.inspectQuit(),
+@@ -1177,6 +1189,9 @@ async function main(): Promise<void> {
+     // Closing hides: the page and the Host keep running, and the next show resumes the same document.
+     window.on('close', (event) => {
+       if (quitting || shellInstallerOwnsQuit || sessionEnding) return
++      // Without a tray there is no way back to a hidden window, so closing quits
++      // instead of hiding (the normal behavior of a Linux desktop application).
++      if (process.platform === 'linux' && tray === undefined) return
+       event.preventDefault()
+       if (updateDialog.isOpen) { updateDialog.focus(); return }
+       const hide = (): void => {
+diff --git a/apps/desktop/src/tray.ts b/apps/desktop/src/tray.ts
+index b2ce416b..86808637 100644
+--- a/apps/desktop/src/tray.ts
++++ b/apps/desktop/src/tray.ts
+@@ -1,11 +1,17 @@
+-/** Windows system tray: the always-present way back to a hidden window and the explicit quit entry. */
++/**
++ * System tray (Windows shell tray and Linux StatusNotifier/AppIndicator host): the
++ * always-present way back to a hidden window and the explicit quit entry.
++ */
+ 
+ import { Menu, nativeImage, Tray } from 'electron'
+ import type { DesktopLocale } from './locale.ts'
+ 
+ /** Main-process actions the tray triggers; both run the same paths as the window and application menu. */
+ export interface DesktopTrayOptions {
+-  /** Multi-size ICO rendered by `scripts/render-tray-icon.ts`; Windows picks the bitmap for the display scale. */
++  /**
++   * Windows takes the multi-size ICO rendered by `scripts/render-tray-icon.ts`;
++   * Linux takes the 32px PNG rendered by `scripts/linux/render-linux-icons.mjs`.
++   */
+   readonly iconPath: string
+   readonly locale: () => DesktopLocale
+   /** Show and focus the primary window. */
+@@ -18,7 +24,10 @@ export interface DesktopTrayOptions {
+ export class DesktopTray {
+   private tray: Tray | undefined
+ 
+-  /** @param options - Icon path, locale reader, and the open and quit actions. */
++  /**
++   * @param options - Icon path, locale reader, and the open and quit actions.
++   * @note Linux hosts only guarantee the context menu, so `open` must be reachable from it.
++   */
+   constructor(private readonly options: DesktopTrayOptions) {
+     const tray = new Tray(nativeImage.createFromPath(options.iconPath))
+     this.tray = tray
 diff --git a/apps/desktop/tests/fixtures/runtime-payload-smoke.mjs b/apps/desktop/tests/fixtures/runtime-payload-smoke.mjs
 index 3cda38c6..b0d36231 100644
 --- a/apps/desktop/tests/fixtures/runtime-payload-smoke.mjs
@@ -704,10 +790,10 @@ index 00000000..85788041
 +ls -la "$TARGET_ROOT/unsigned-artifacts" || true
 diff --git a/scripts/linux/render-linux-icons.mjs b/scripts/linux/render-linux-icons.mjs
 new file mode 100644
-index 00000000..37d01642
+index 00000000..f1665660
 --- /dev/null
 +++ b/scripts/linux/render-linux-icons.mjs
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,50 @@
 +/** Render the standard hicolor icon set electron-builder needs on Linux.
 + *
 + * Upstream ships only `resources/icon.png` at its designer size (1104x1104).
@@ -749,4 +835,13 @@ index 00000000..37d01642
 +    .toFile(file)
 +}
 +console.log(`rendered ${targets.length} linux icons into ${output}`)
++
++// StatusNotifier hosts draw a single bitmap and scale it themselves, so ship one
++// crisp 32px PNG rather than an ICO; the desktop shell picks the display density.
++const tray = join(desktopRoot, 'resources', 'tray-linux.png')
++await sharp(source)
++  .resize(32, 32, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
++  .png({ compressionLevel: 9 })
++  .toFile(tray)
++console.log(`rendered linux tray icon into ${tray}`)
 \ No newline at end of file
