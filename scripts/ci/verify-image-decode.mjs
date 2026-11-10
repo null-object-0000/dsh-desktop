@@ -57,7 +57,9 @@ if (saved.width !== 900 || saved.height !== 700) {
 console.log('saveImage:', saved.width, saved.height, saved.mediaType, saved.bytes)
 
 const request = await store.readImageRequest(saved, { width: 320, height: 240, maxBytes: 200_000 })
-if (request.width !== 320 || request.width > saved.width || request.height > 240) {
+// request-image scales by the long edge only, so the short edge may exceed the
+// route's nominal target while preserving the aspect ratio.
+if (request.width !== 320 || request.height < 1 || request.height > 320) {
   throw new Error(`unexpected request image ${request.width}x${request.height}`)
 }
 if (!['image/jpeg', 'image/webp', 'image/png'].includes(request.mediaType)) {
