@@ -33,7 +33,7 @@ gh release create dsh-v0.2.2-rc.1 \
 {
   "applicationId": "deepseek-harness-desktop",
   "packageName": "deepseek-harness",
-  "displayName": "DeepSeek Harness",
+  "displayName": "DeepSeek Harness Desktop",
   "vendor": "DeepSeek",
   "architecture": "amd64",
   "description": "DeepSeek Harness（dsh）官方桌面客户端的 Linux 构建，跟随官方版本。",
@@ -61,6 +61,7 @@ gh release create dsh-v0.2.2-rc.1 \
 
 注意：
 - `packageName` **必须等于** `.deb` 控制文件里的 `Package` 字段，构建后从 `dpkg-deb -f <deb> Package` 取，不要猜；
+- 分类写入 umanager 的 `feed-categories.json`（`assignments.applications`），我们用的是 `ai-tools`
 - `icon` 字段指向内置图标 id；新增应用图标由 CI 从 `.deb` 里提取（`scripts/desktop-icons.mjs`），deb 里需要 `/usr/share/icons/hicolor/*/apps/*.png` 与 `.desktop` 文件（electron-builder 会生成）；
 - `allowPrerelease: true` 是必须的——官方目前只发 rc；
 - UManager 安装时会再次校验 deb 包名/版本/架构与 feed 一致，所以镜像的资产名与 deb 控制信息不能改。
