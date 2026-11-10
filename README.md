@@ -35,7 +35,16 @@ sudo apt -f install
 - 未做 deb/GPG 签名。
 - deb 版本号按 Debian 规则把 `-rc.1` 规范成 `0.2.2~rc.1`。
 
-## 自己构建
+## 自动构建（GitHub Actions）
+
+`build-linux.yml` 工作流每 6 小时检查一次上游 `dsh-v*` tag：有新版本时在 GitHub 托管 runner 上克隆该 tag、应用补丁、构建并验证图片解码，然后把 `.deb` / `.AppImage` / `manifest.json` 发布到本仓库 Releases（UManager 的 feed CI 每 30 分钟轮询 `/releases/latest`，商店自动可见）。也可以手动触发：
+
+```bash
+gh workflow run build-linux.yml --repo null-object-0000/dsh-desktop \
+  -f tag=dsh-v0.2.2-rc.1 -f force=true
+```
+
+## 本地构建
 
 见 [`scripts/`](scripts/README.md)：
 

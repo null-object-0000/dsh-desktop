@@ -1,0 +1,137 @@
+name: build-linux
+
+# Build DeepSeek Harness Desktop for Linux from a new official upstream tag and
+# publish the .deb / AppImage to this repository's Releases.
+#
+# UManager's feed CI (null-object-0000/umanager) polls this repository's
+# `/releases/latest` every 30 minutes; a release published here becomes
+# installable in the store without any further manual step. Releases are
+# intentionally NOT marked as prereleases: the feed generator rejects those.
+
+on:
+  schedule:
+    # Every 6 hours; the upstream release cadence is far slower than this.
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Upstream tag to build (empty = newest dsh-v* tag)"
+        required: false
+        default: ""
+      force:
+        description: "Rebuild and replace assets even when the release exists"
+        type: boolean
+        default: false
+
+concurrency:
+  group: build-linux
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM_REPO: deepseek-ai/deepseek-harness
+  # Runners have better access to the GitHub release mirror than to npmmirror,
+  # but @electron/get only understands the mirror layout for npmmirror, so the
+  # default from scripts/package-linux.sh is kept for now.
+  DSH_GATE_CONCURRENCY: "2"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+          sudo apt-get clean
+          df -h /
+
+      - uses: actions/checkout@v4
+
+      - name: Resolve upstream tag
+        id: resolve
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="$(git ls-remote --tags --refs "https://github.com/${UPSTREAM_REPO}.git" 'refs/tags/dsh-v*' \
+              | sed 's#.*refs/tags/##' | grep -E '^dsh-v[0-9]' | sort -V | tail -n1)"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Check existing release
+        id: existing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.resolve.outputs.tag }}"
+          COUNT="$(gh release view "$TAG" --repo "${{ github.repository }}" --json assets \
+            --jq '[.assets[].name] | length' 2>/dev/null || echo 0)"
+          echo "asset_count=$COUNT" >> "$GITHUB_OUTPUT"
+          if [ "$COUNT" -gt 0 ] && [ "${{ github.event.inputs.force }}" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "release $TAG already has $COUNT asset(s); skipping (use force to rebuild)"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node
+        if: steps.existing.outputs.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Setup pnpm
+        if: steps.existing.outputs.skip != 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.28.5
+
+      - name: Restore build caches
+        if: steps.existing.outputs.skip != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.local/share/pnpm/store
+          key: dsh-linux-${{ runner.os }}-${{ steps.resolve.outputs.tag }}
+          restore-keys: |
+            dsh-linux-${{ runner.os }}-
+
+      - name: Build artifacts
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          chmod +x scripts/*.sh
+          ./scripts/build-tag.sh "${{ steps.resolve.outputs.tag }}"
+
+      - name: Verify image decoding regression
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          chmod +x scripts/*.sh
+          ./scripts/verify-package.sh "${{ steps.resolve.outputs.tag }}"
+
+      - name: Publish release
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.resolve.outputs.tag }}"
+          DIR="dist/$TAG"
+          NOTES="$(node scripts/release-notes.mjs "$DIR/manifest.json")"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "${{ github.repository }}" \
+              --title "DeepSeek Harness ${TAG#dsh-v} (Linux)" --notes "$NOTES"
+          else
+            gh release create "$TAG" --repo "${{ github.repository }}" \
+              --title "DeepSeek Harness ${TAG#dsh-v} (Linux)" --notes "$NOTES"
+          fi
+          gh release upload "$TAG" --repo "${{ github.repository }}" \
+            "$DIR"/*.deb "$DIR"/*.AppImage "$DIR/manifest.json" --clobber
