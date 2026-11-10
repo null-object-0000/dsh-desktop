@@ -32,6 +32,8 @@ sudo apt -f install
 
 已验证（真实安装包启动）：粘贴 900×700 PNG、文件选择器上传 900×700 PNG 均成功保存且 Host 无崩溃；ASAR 布局下 `saveImage` / `readImageRequest` 解码+归一化+JPEG 编码均通过。
 
+品牌：用 `--profile official` 构建客户端，侧栏显示官方鲸鱼标识与 DeepSeek Harness 字样（此前 unsigned 走 `local` 档，显示 “DSH 本地构建” 占位）。
+
 图标：构建时把 1104px 的主图标渲染成 16–1024 的标准 hicolor 尺寸再打包，桌面启动器与商店图标都能解析（此前只有 `1104x1104` 目录，图标主题不会扫描，安装后显示占位图标）。
 - 无系统托盘、无应用内自动更新（更新由包管理器或重新下载完成）。
 - 未做 deb/GPG 签名。
@@ -41,8 +43,8 @@ sudo apt -f install
 
 最新 Release 由 CI 构建并验证（图片解码回归测试通过）：
 
-- `deepseek-harness-0.2.2-rc.1-linux-amd64-unsigned.deb` — sha256 `aef75d464861e2a7460943ab0505adb47baaa468e6e97ec0a18ec558e32116e4`（deb 版本 `0.2.2~rc.1.linux.5`）
-- `deepseek-harness-0.2.2-rc.1-linux-x86_64-unsigned.AppImage` — sha256 `f80731d95fa9a8b7f5090fc5bb599bf100d8a48eb7ff57ee49ab096ef44899c2`
+- `deepseek-harness-0.2.2-rc.1-linux-amd64-unsigned.deb` — sha256 `fc38da2ff05b8223ed9581ca36ce18b9b32f2f8a91b197893c9e155fffe4f21d`（deb 版本 `0.2.2~rc.1.linux.6`）
+- `deepseek-harness-0.2.2-rc.1-linux-x86_64-unsigned.AppImage` — sha256 `aaa0c7fafd07b1a03d5dda6a139a7374bf2c58712bf40f1834725874ee08a063`
 - 上游 commit：`66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db`（tag `dsh-v0.2.2-rc.1`）
 
 ## 自动构建（GitHub Actions）
