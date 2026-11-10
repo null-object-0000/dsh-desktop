@@ -5,22 +5,23 @@
   "version": "0.2.2-rc.1",
   "channel": "prerelease",
   "packageName": "deepseek-harness",
-  "packageVersion": "0.2.2~rc.1",
+  "packageVersion": "0.2.2~rc.1.linux.5",
+  "productVersion": "0.2.2-rc.1",
   "architecture": "amd64",
   "artifacts": [
     {
       "kind": "deb",
       "file": "deepseek-harness-0.2.2-rc.1-linux-amd64-unsigned.deb",
-      "size": 289342032,
-      "sha256": "bf80b51d7804ba141d4e7e33f7077e0e3a6050be68c7345cdc185f79d7086b7f"
+      "size": 289426460,
+      "sha256": "aef75d464861e2a7460943ab0505adb47baaa468e6e97ec0a18ec558e32116e4"
     },
     {
       "kind": "AppImage",
       "file": "deepseek-harness-0.2.2-rc.1-linux-x86_64-unsigned.AppImage",
-      "size": 369180773,
-      "sha256": "81182bd0dbe7142dc373a1cb30ab1d1e1237bc349f5549607a3b429ef21c6322"
+      "size": 369263115,
+      "sha256": "f80731d95fa9a8b7f5090fc5bb599bf100d8a48eb7ff57ee49ab096ef44899c2"
     }
   ],
   "upstreamCommit": "66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db",
-  "builtAt": "2026-11-10T02:02:24.309Z"
+  "builtAt": "2026-11-10T03:45:26.434Z"
 }

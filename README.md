@@ -31,6 +31,8 @@ sudo apt -f install
 `sharp` 的预编译 libvips 在 Electron 的 Node 运行时下解码会 SIGSEGV（Electron 44.7/44.9/45、sharp 0.34/0.35 均复现；随包独立 Node 24.21 正常）。本仓库补丁把光栅操作转发给 primary-runtime 里的独立 Node 子进程执行，并把 `sharp`、`@img/*`、`detect-libc`、`semver` 从 ASAR 解包供纯 Node 读取。
 
 已验证（真实安装包启动）：粘贴 900×700 PNG、文件选择器上传 900×700 PNG 均成功保存且 Host 无崩溃；ASAR 布局下 `saveImage` / `readImageRequest` 解码+归一化+JPEG 编码均通过。
+
+图标：构建时把 1104px 的主图标渲染成 16–1024 的标准 hicolor 尺寸再打包，桌面启动器与商店图标都能解析（此前只有 `1104x1104` 目录，图标主题不会扫描，安装后显示占位图标）。
 - 无系统托盘、无应用内自动更新（更新由包管理器或重新下载完成）。
 - 未做 deb/GPG 签名。
 - deb 版本号按 Debian 规则把 `-rc.1` 规范成 `0.2.2~rc.1`。
@@ -39,8 +41,8 @@ sudo apt -f install
 
 最新 Release 由 CI 构建并验证（图片解码回归测试通过）：
 
-- `deepseek-harness-0.2.2-rc.1-linux-amd64-unsigned.deb` — sha256 `bf80b51d7804ba141d4e7e33f7077e0e3a6050be68c7345cdc185f79d7086b7f`
-- `deepseek-harness-0.2.2-rc.1-linux-x86_64-unsigned.AppImage` — sha256 `81182bd0dbe7142dc373a1cb30ab1d1e1237bc349f5549607a3b429ef21c6322`
+- `deepseek-harness-0.2.2-rc.1-linux-amd64-unsigned.deb` — sha256 `aef75d464861e2a7460943ab0505adb47baaa468e6e97ec0a18ec558e32116e4`（deb 版本 `0.2.2~rc.1.linux.5`）
+- `deepseek-harness-0.2.2-rc.1-linux-x86_64-unsigned.AppImage` — sha256 `f80731d95fa9a8b7f5090fc5bb599bf100d8a48eb7ff57ee49ab096ef44899c2`
 - 上游 commit：`66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db`（tag `dsh-v0.2.2-rc.1`）
 
 ## 自动构建（GitHub Actions）
