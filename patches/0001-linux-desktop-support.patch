@@ -109,6 +109,25 @@ index cf0c19e8..301bbc69 100644
      },
      nsis: {
        uninstallDisplayName: '${productName}',
+diff --git a/apps/desktop/scripts/pack-local-packages.ts b/apps/desktop/scripts/pack-local-packages.ts
+index 79136479..6fa761bb 100644
+--- a/apps/desktop/scripts/pack-local-packages.ts
++++ b/apps/desktop/scripts/pack-local-packages.ts
+@@ -18,7 +18,13 @@ async function main(): Promise<void> {
+   if (values.out === undefined) throw new Error('desktop local pack: --out must name the package staging directory')
+   const concurrency = parsePackConcurrency(values.concurrency)
+   const root = process.cwd()
+-  const environment = resolveClientBuildEnvironment(repositoryClientBuildEnvironment(root), 'local')
++  // Linux port: our packages are unsigned but built from the official client
++  // profile (product branding instead of the local-build placeholder).
++  const profile = process.env.DSH_PACK_LOCAL_PROFILE ?? 'local'
++  if (profile !== 'local' && profile !== 'official') {
++    throw new Error(`desktop local pack: DSH_PACK_LOCAL_PROFILE must be local or official, got ${profile}`)
++  }
++  const environment = resolveClientBuildEnvironment(repositoryClientBuildEnvironment(root), profile)
+   readClientBuildRecord(root, environment)
+   const destination = resolve(root, values.out)
+   const packed = await packFamilyMembers(root, releaseFamily('dsh'), destination, concurrency)
 diff --git a/apps/desktop/scripts/package-target.ts b/apps/desktop/scripts/package-target.ts
 index b6bc6efb..a23ba4b5 100644
 --- a/apps/desktop/scripts/package-target.ts
@@ -622,10 +641,10 @@ index 59b31eb4..54406818 100644
    node-pty: true
 diff --git a/scripts/linux/package-linux.sh b/scripts/linux/package-linux.sh
 new file mode 100755
-index 00000000..6681b966
+index 00000000..85788041
 --- /dev/null
 +++ b/scripts/linux/package-linux.sh
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,57 @@
 +#!/usr/bin/env bash
 +# Package DeepSeek Harness Desktop as a Linux .deb (unsigned, upstream source tree).
 +set -euo pipefail
@@ -650,7 +669,10 @@ index 00000000..6681b966
 +
 +step "build: artifacts (profile local)"
 +cd "$ROOT"
-+pnpm exec tsx scripts/build.ts --scope artifacts --profile local --serial
++# Official client profile: the generic "local" profile renders the sidebar brand
++# as "DSH 本地构建" and drops the product logo, which looks wrong for a store app.
++export DSH_PACK_LOCAL_PROFILE=official
++pnpm exec tsx scripts/build.ts --scope artifacts --profile official --serial
 +
 +step "prepare: packed inputs"
 +rm -rf "$PACKED"
