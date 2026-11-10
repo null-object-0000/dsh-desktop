@@ -52,11 +52,13 @@ if [ -z "$DEB" ]; then
   echo "no .deb produced in $ARTIFACTS" >&2
   exit 1
 fi
-cp -f "$DEB" "$OUT/"
-APPIMAGE="$(ls -1 "$ARTIFACTS"/*.AppImage 2>/dev/null | head -n1 || true)"
-if [ -n "$APPIMAGE" ]; then cp -f "$APPIMAGE" "$OUT/"; fi
-
 VERSION="${TAG#dsh-v}"
+# Keep release asset names canonical even when the deb control version carries a
+# rebuild suffix (`0.2.2~rc.1+linux.7`): UManager matches the asset name exactly.
+cp -f "$DEB" "$OUT/deepseek-harness-${VERSION}-linux-amd64-unsigned.deb"
+APPIMAGE="$(ls -1 "$ARTIFACTS"/*.AppImage 2>/dev/null | head -n1 || true)"
+if [ -n "$APPIMAGE" ]; then cp -f "$APPIMAGE" "$OUT/deepseek-harness-${VERSION}-linux-x86_64-unsigned.AppImage"; fi
+
 CHANNEL="stable"
 case "$VERSION" in
   *-*) CHANNEL="prerelease" ;;
@@ -91,6 +93,7 @@ writeFileSync(env.MANIFEST, `${JSON.stringify({
   channel: env.CHANNEL,
   packageName: field('Package'),
   packageVersion: field('Version'),
+  productVersion: env.VERSION,
   architecture: field('Architecture'),
   artifacts,
   upstreamCommit: execFileSync('git', ['-C', join(env.OUT, '..', '..', 'src'), 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),

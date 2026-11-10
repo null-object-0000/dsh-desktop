@@ -1,8 +1,8 @@
 diff --git a/apps/desktop/package.json b/apps/desktop/package.json
-index cd442251..d47cd1f6 100644
+index 00eee144..4425a7fb 100644
 --- a/apps/desktop/package.json
 +++ b/apps/desktop/package.json
-@@ -91,5 +91,6 @@
+@@ -90,5 +90,6 @@
      "@deepseek-ai/dsh-util-file-drag": "workspace:*",
      "@deepseek-ai/dsh-client-ui-file-actions": "workspace:*",
      "tencentcloud-sdk-nodejs-teo": "4.1.330"
@@ -45,9 +45,18 @@ index 37515c20..706c76fd 100644
    ], APP_ROOT, environment)
  }
 diff --git a/apps/desktop/scripts/electron-builder-config.mjs b/apps/desktop/scripts/electron-builder-config.mjs
-index cf0c19e8..5c019938 100644
+index cf0c19e8..301bbc69 100644
 --- a/apps/desktop/scripts/electron-builder-config.mjs
 +++ b/apps/desktop/scripts/electron-builder-config.mjs
+@@ -1,7 +1,7 @@
+ import { readInstallerLocales, renderInstallerStrings } from './installer-locales.mjs'
+ import { officePackageDirectories } from '../../../scripts/libreoffice-packages.mjs'
+ import { X509Certificate } from 'node:crypto'
+-import { readFileSync } from 'node:fs'
++import { existsSync, readFileSync } from 'node:fs'
+ import { readFile, writeFile } from 'node:fs/promises'
+ import { join, relative, sep } from 'node:path'
+ import { fileURLToPath } from 'node:url'
 @@ -66,7 +66,7 @@ export function createElectronBuilderConfig(
    if (skipNotarization && (unsigned || resolvedPlatform !== 'darwin')) throw new Error('Skipping notarization requires a signed macOS build')
    const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
@@ -79,12 +88,16 @@ index cf0c19e8..5c019938 100644
        dshDesktopAppId: appId,
        dshDesktopUpdateChannel: update?.channel ?? 'nightly',
        ...(policy === undefined ? {} : { dshMandatoryUpdatePolicy: policy }),
-@@ -254,7 +262,15 @@ export function createElectronBuilderConfig(
+@@ -254,7 +262,19 @@ export function createElectronBuilderConfig(
      },
      linux: {
        category: 'Development',
 -      target: ['AppImage'],
-+      icon: fileURLToPath(new URL('../resources/icon.png', import.meta.url)),
++      // A directory of standard hicolor PNG sizes, so the installed desktop entry
++      // resolves its icon; the single 1104px master would land in a size no theme scans.
++      icon: existsSync(fileURLToPath(new URL('../resources/icon-linux', import.meta.url)))
++        ? fileURLToPath(new URL('../resources/icon-linux', import.meta.url))
++        : fileURLToPath(new URL('../resources/icon.png', import.meta.url)),
 +      executableName: 'deepseek-harness',
 +      target: ['deb', 'AppImage'],
 +    },
@@ -96,7 +109,6 @@ index cf0c19e8..5c019938 100644
      },
      nsis: {
        uninstallDisplayName: '${productName}',
-
 diff --git a/apps/desktop/scripts/package-target.ts b/apps/desktop/scripts/package-target.ts
 index b6bc6efb..a23ba4b5 100644
 --- a/apps/desktop/scripts/package-target.ts
@@ -210,10 +222,10 @@ index 6c3c12c8..840fbef3 100644
    resolveDesktopPackageTarget(target))
  if (windows && !values.unsigned) await verifyWindowsCode(application)
 diff --git a/apps/desktop/src/main.ts b/apps/desktop/src/main.ts
-index dd314122..01c7c7c8 100644
+index d8d0e30c..d57dcbbf 100644
 --- a/apps/desktop/src/main.ts
 +++ b/apps/desktop/src/main.ts
-@@ -525,7 +525,12 @@ async function main(): Promise<void> {
+@@ -518,7 +518,12 @@ async function main(): Promise<void> {
    const backend = new DesktopBackendController((onFailure) => {
      const hostInspectPort = developmentHostInspectPort(development)
      const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
@@ -610,10 +622,10 @@ index 59b31eb4..54406818 100644
    node-pty: true
 diff --git a/scripts/linux/package-linux.sh b/scripts/linux/package-linux.sh
 new file mode 100755
-index 00000000..08a9113b
+index 00000000..6681b966
 --- /dev/null
 +++ b/scripts/linux/package-linux.sh
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,54 @@
 +#!/usr/bin/env bash
 +# Package DeepSeek Harness Desktop as a Linux .deb (unsigned, upstream source tree).
 +set -euo pipefail
@@ -659,9 +671,60 @@ index 00000000..08a9113b
 +step "prepare:dsh"
 +pnpm run prepare:dsh
 +
++step "render linux icon set"
++node "$ROOT/scripts/linux/render-linux-icons.mjs"
++
 +step "electron-builder (linux deb)"
 +pnpm exec electron-builder --config electron-builder.config.mjs --linux --x64 --publish never
 +
 +echo
 +echo "### artifacts"
 +ls -la "$TARGET_ROOT/unsigned-artifacts" || true
+diff --git a/scripts/linux/render-linux-icons.mjs b/scripts/linux/render-linux-icons.mjs
+new file mode 100644
+index 00000000..37d01642
+--- /dev/null
++++ b/scripts/linux/render-linux-icons.mjs
+@@ -0,0 +1,41 @@
++/** Render the standard hicolor icon set electron-builder needs on Linux.
++ *
++ * Upstream ships only `resources/icon.png` at its designer size (1104x1104).
++ * electron-builder copies that single file into a matching `1104x1104` icon
++ * directory, which no freedesktop icon theme searches, so installed desktop
++ * entries fall back to a generic placeholder. Rasterizing the master icon into
++ * the standard size directories fixes the launcher and store icons.
++ *
++ * usage: node scripts/linux/render-linux-icons.mjs
++ */
++import { mkdirSync, rmSync } from 'node:fs'
++import { createRequire } from 'node:module'
++import { dirname, join, resolve } from 'node:path'
++import { fileURLToPath } from 'node:url'
++
++const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
++const desktopRoot = join(repositoryRoot, 'apps', 'desktop')
++const source = join(desktopRoot, 'resources', 'icon.png')
++const output = join(desktopRoot, 'resources', 'icon-linux')
++
++const SIZES = [16, 24, 32, 48, 64, 128, 256, 512]
++// The hicolor theme also looks up @2 variants on HiDPI screens; electron-builder
++// names each output directory after the file's real pixel size, so render those
++// separately for the sizes that benefit from it.
++const SIZES_2X = [32, 48, 64, 128, 256, 512, 1024]
++
++const require = createRequire(join(desktopRoot, 'package.json'))
++const sharp = require('sharp')
++
++rmSync(output, { recursive: true, force: true })
++mkdirSync(output, { recursive: true })
++
++const targets = [...new Set([...SIZES, ...SIZES_2X])].sort((left, right) => left - right)
++for (const size of targets) {
++  const file = join(output, `${size}x${size}.png`)
++  await sharp(source)
++    .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
++    .png({ compressionLevel: 9 })
++    .toFile(file)
++}
++console.log(`rendered ${targets.length} linux icons into ${output}`)
+\ No newline at end of file
