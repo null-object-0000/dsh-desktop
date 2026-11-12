@@ -1,8 +1,8 @@
 diff --git a/apps/desktop/package.json b/apps/desktop/package.json
-index 00eee144..4425a7fb 100644
+index f13ba317..cf563519 100644
 --- a/apps/desktop/package.json
 +++ b/apps/desktop/package.json
-@@ -90,5 +90,6 @@
+@@ -91,5 +91,6 @@
      "@deepseek-ai/dsh-util-file-drag": "workspace:*",
      "@deepseek-ai/dsh-client-ui-file-actions": "workspace:*",
      "tencentcloud-sdk-nodejs-teo": "4.1.330"
@@ -45,7 +45,7 @@ index 37515c20..706c76fd 100644
    ], APP_ROOT, environment)
  }
 diff --git a/apps/desktop/scripts/electron-builder-config.mjs b/apps/desktop/scripts/electron-builder-config.mjs
-index cf0c19e8..613b73c4 100644
+index d5522e3d..9eed09f2 100644
 --- a/apps/desktop/scripts/electron-builder-config.mjs
 +++ b/apps/desktop/scripts/electron-builder-config.mjs
 @@ -1,7 +1,7 @@
@@ -76,10 +76,10 @@ index cf0c19e8..613b73c4 100644
 +    '**/node_modules/@img/**/*',
 +    '**/node_modules/detect-libc/**/*',
 +    '**/node_modules/semver/**/*',
-     `**/node_modules/@deepseek-ai/libreoffice-kit-${resolvedPlatform}-${resolvedArch}/**/*`]
-   const windowsSigner = packagesWindows && !unsigned
-     ? createWindowsTokenSigner({
-@@ -108,6 +114,8 @@ export function createElectronBuilderConfig(
+     `**/node_modules/@deepseek-ai/libreoffice-kit-${resolvedPlatform}-${resolvedArch}/**/*`,
+     // LaunchServices opens the Computer Use helper as an application, so every file of its bundles stays on disk.
+     // Both architectures ship: they form one notarized payload whose manifest staging verifies as a whole.
+@@ -110,6 +116,8 @@ export function createElectronBuilderConfig(
      appId,
      protocols: [{ name: 'DeepSeek Harness', schemes: ['dsh'] }],
      extraMetadata: {
@@ -88,7 +88,7 @@ index cf0c19e8..613b73c4 100644
        dshDesktopAppId: appId,
        dshDesktopUpdateChannel: update?.channel ?? 'nightly',
        ...(policy === undefined ? {} : { dshMandatoryUpdatePolicy: policy }),
-@@ -160,6 +168,8 @@ export function createElectronBuilderConfig(
+@@ -162,6 +170,8 @@ export function createElectronBuilderConfig(
        { from: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)), to: 'icon.png' },
        // Windows tray bitmaps; macOS keeps the Dock and ships no menu bar icon.
        ...(packagesWindows ? [{ from: fileURLToPath(new URL('../resources/tray-windows.ico', import.meta.url)), to: 'tray.ico' }] : []),
@@ -97,7 +97,7 @@ index cf0c19e8..613b73c4 100644
      ],
      mac: {
        icon: fileURLToPath(new URL('../resources/icon-macos.png', import.meta.url)),
-@@ -254,7 +264,19 @@ export function createElectronBuilderConfig(
+@@ -256,7 +266,19 @@ export function createElectronBuilderConfig(
      },
      linux: {
        category: 'Development',
@@ -250,10 +250,10 @@ index 6c3c12c8..840fbef3 100644
    resolveDesktopPackageTarget(target))
  if (windows && !values.unsigned) await verifyWindowsCode(application)
 diff --git a/apps/desktop/src/main.ts b/apps/desktop/src/main.ts
-index d8d0e30c..6ee71178 100644
+index 8f9cd823..677a07cb 100644
 --- a/apps/desktop/src/main.ts
 +++ b/apps/desktop/src/main.ts
-@@ -518,7 +518,12 @@ async function main(): Promise<void> {
+@@ -534,7 +534,12 @@ async function main(): Promise<void> {
    const backend = new DesktopBackendController((onFailure) => {
      const hostInspectPort = developmentHostInspectPort(development)
      const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
@@ -267,7 +267,7 @@ index d8d0e30c..6ee71178 100644
        primaryRuntime,
        resources, (next) => { platformView.setSession(next) }, (record) => {
          operationJournal ??= new OperationJournal(join(app.getPath('userData'), 'plugin-operations'), {
-@@ -1089,18 +1094,25 @@ async function main(): Promise<void> {
+@@ -1240,18 +1245,25 @@ async function main(): Promise<void> {
      tray?.relabel()
    }
    refreshApplicationMenu()
@@ -298,7 +298,7 @@ index d8d0e30c..6ee71178 100644
    const quitConfirmation = new DesktopQuitConfirmation({
      locale: () => locale,
      inspect: () => backend.host?.inspectQuit(),
-@@ -1177,6 +1189,9 @@ async function main(): Promise<void> {
+@@ -1328,6 +1340,9 @@ async function main(): Promise<void> {
      // Closing hides: the page and the Host keep running, and the next show resumes the same document.
      window.on('close', (event) => {
        if (quitting || shellInstallerOwnsQuit || sessionEnding) return
@@ -394,12 +394,12 @@ index 3cda38c6..b0d36231 100644
    checkHtml()
    console.error('runtime payload: pty')
 diff --git a/apps/desktop/tests/main-startup.spec.ts b/apps/desktop/tests/main-startup.spec.ts
-index 3b1e63e0..8b932bba 100644
+index 17e16cec..48533646 100644
 --- a/apps/desktop/tests/main-startup.spec.ts
 +++ b/apps/desktop/tests/main-startup.spec.ts
-@@ -203,11 +203,17 @@ const harness = await vi.hoisted(async () => {
-   const analytics = vi.fn(async (_event: unknown) => {})
-   const nativeTheme = { themeSource: 'system', shouldUseDarkColors: false }
+@@ -211,11 +211,17 @@ const harness = await vi.hoisted(async () => {
+     set shouldUseDarkColors(value: boolean) { this.systemDark = value }
+   }()
    const trays: FakeTray[] = []
 +  /** Set by a test that needs Tray construction to fail (no status-notifier host). */
 +  let trayUnavailable = false
@@ -416,7 +416,7 @@ index 3b1e63e0..8b932bba 100644
    }
    const backgroundNotice = { close: vi.fn((hide: () => void) => { hide() }), dispose: vi.fn(), markerPath: undefined as string | undefined }
    const shellDialog = { isOpen: false, focus: vi.fn() }
-@@ -219,6 +225,9 @@ const harness = await vi.hoisted(async () => {
+@@ -228,6 +234,9 @@ const harness = await vi.hoisted(async () => {
      platformDispose,
      platformCloseAndWait,
  
@@ -426,7 +426,7 @@ index 3b1e63e0..8b932bba 100644
      get analyticsEnabled() { return analyticsEnabled },
      set analyticsEnabled(value: boolean) { analyticsEnabled = value; analyticsEnabledListener?.(value) },
      watchAccount: (
-@@ -263,6 +272,7 @@ const harness = await vi.hoisted(async () => {
+@@ -273,6 +282,7 @@ const harness = await vi.hoisted(async () => {
        windows.length = 0
        views.length = 0; hosts.length = 0; handlers.clear(); app.removeAllListeners()
        trays.length = 0
@@ -434,7 +434,7 @@ index 3b1e63e0..8b932bba 100644
        backgroundNotice.markerPath = undefined
        shellDialog.isOpen = false
        powerMonitor.removeAllListeners()
-@@ -415,6 +425,17 @@ function invoke(channel: string, origin = channel === DESKTOP_IPC.boot ? 'app' :
+@@ -446,6 +456,17 @@ function invoke(channel: string, origin = channel === DESKTOP_IPC.boot ? 'app' :
    return handler({ senderFrame: { url: `dsh-app://${origin}/index.html` } }, ...args)
  }
  
@@ -452,7 +452,7 @@ index 3b1e63e0..8b932bba 100644
  function applicationMenuItems(): MenuItemConstructorOptions[] {
    const native = harness.menu.mock.calls[0]?.[0][0]?.submenu
    if (Array.isArray(native)) return native
-@@ -590,7 +611,7 @@ describe('desktop main startup', () => {
+@@ -848,7 +869,7 @@ describe('desktop main startup', () => {
        { sender, senderFrame: sender.mainFrame }, nextLocale,
      )
      const refreshed = platform === 'win32' ? applicationMenuItems()
@@ -461,7 +461,7 @@ index 3b1e63e0..8b932bba 100644
      expect(refreshed.filter(item => item.role === 'toggleDevTools' && item.visible !== false)).toEqual([
        { role: 'toggleDevTools', label: nextLocale === 'en' ? en.toggleDevToolsMenu : zh.toggleDevToolsMenu },
      ])
-@@ -1372,6 +1393,38 @@ describe('desktop main startup', () => {
+@@ -1721,6 +1742,38 @@ describe('desktop main startup', () => {
      expect(harness.trays[0]!.setContextMenu.mock.calls.length).toBe(relabels + 1)
    })
  
@@ -861,7 +861,7 @@ index 798b21ae..d0140dd9 100644
 +  return createSharp()
 +}
 diff --git a/pnpm-workspace.yaml b/pnpm-workspace.yaml
-index 59b31eb4..54406818 100644
+index 02bb4f0f..89e893c3 100644
 --- a/pnpm-workspace.yaml
 +++ b/pnpm-workspace.yaml
 @@ -30,6 +30,8 @@ peerDependencyRules:
