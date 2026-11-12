@@ -9,6 +9,13 @@ name: build-linux
 # intentionally NOT marked as prereleases: the feed generator rejects those.
 
 on:
+  # Patch/script fixes should build immediately instead of waiting for cron.
+  push:
+    branches: [main]
+    paths:
+      - 'patches/**'
+      - 'scripts/**'
+      - '.github/workflows/build-linux.yml'
   schedule:
     # Every 6 hours; the upstream release cadence is far slower than this.
     - cron: "23 */6 * * *"
